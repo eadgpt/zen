@@ -152,6 +152,7 @@ export function createAudio() {
 
   function build() {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.onstatechange = () => { if (api.onstate) api.onstate(ctx.state); };
     master = ctx.createGain(); master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.3;
     analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
@@ -264,14 +265,42 @@ export function createAudio() {
   }
 
   const live = () => ctx && on;
+  // iPhone / iPad: sound made by a web page counts as a "ringer" sound, so the silent switch mutes it, and it can
+  // only be started from inside a real tap. Playing a silent, looping <audio> element (and asking for the
+  // 'playback' audio session where the browser has one) makes the page count as media, which is always heard.
+  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let keepAlive = null;
+  function mediaChannel(play) {
+    if (!IOS) return;
+    try { if (navigator.audioSession) navigator.audioSession.type = play ? 'playback' : 'auto'; } catch {}
+    if (!keepAlive) {
+      const sr = 8000, n = sr / 2, b = new Uint8Array(44 + n), dv = new DataView(b.buffer);      // half a second of silence, as a WAV
+      const put = (o, s) => { for (let i = 0; i < s.length; i++) b[o + i] = s.charCodeAt(i); };
+      put(0, 'RIFF'); dv.setUint32(4, 36 + n, true); put(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, sr, true); dv.setUint32(28, sr, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true); put(36, 'data'); dv.setUint32(40, n, true);
+      b.fill(128, 44);
+      keepAlive = new Audio(URL.createObjectURL(new Blob([b], { type: 'audio/wav' })));
+      keepAlive.loop = true; keepAlive.setAttribute('playsinline', ''); keepAlive.preload = 'auto';
+    }
+    if (play) { const p = keepAlive.play(); if (p && p.catch) p.catch(() => {}); } else keepAlive.pause();
+  }
   const api = {
     get on() { return on; },
     get started() { return !!ctx; },
+    get running() { return !!ctx && ctx.state === 'running'; },
+    onstate: null,
+    // call from inside every tap / click / key press: wakes the sound if the browser has it held back
+    unlock() {
+      if (!ctx || !on) return;
+      mediaChannel(true);
+      if (ctx.state !== 'running') ctx.resume().catch(() => {});
+    },
     setOn(v) {
       on = !!v;
       if (on && !ctx) build();
       if (!ctx) return;
-      if (on) ctx.resume();
+      mediaChannel(on);
+      if (on) ctx.resume().catch(() => {});
       master.gain.cancelScheduledValues(ctx.currentTime);
       master.gain.setTargetAtTime(on ? 1.6 : 0, ctx.currentTime, on ? 0.7 : 0.12);
     },

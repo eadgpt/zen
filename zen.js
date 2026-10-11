@@ -7,8 +7,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createAudio } from './audio.js?v=28';
-import { createLake, lakeShore, LAKE_S, LAKE_GLSL, LAKE_VIEW } from './lake.js?v=27';
+import { createAudio } from './audio.js?v=29';
+import { createLake, lakeShore, LAKE_S, LAKE_GLSL, LAKE_VIEW } from './lake.js?v=29';
 
 const V3 = THREE.Vector3;
 
@@ -110,6 +110,9 @@ controls.minDistance = 4.2; controls.maxDistance = 11;
 controls.minPolarAngle = 0.32 * Math.PI; controls.maxPolarAngle = 0.492 * Math.PI;
 controls.minAzimuthAngle = -1.25; controls.maxAzimuthAngle = 1.25;
 controls.rotateSpeed = 0.45; controls.zoomSpeed = 0.6;
+// touch screens: one finger touches the water and the sand; two fingers look around and zoom
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+if (TOUCH) controls.touches = { ONE: -1, TWO: THREE.TOUCH.DOLLY_ROTATE };
 controls.update();
 // the garden (pond + sand share it) and the lake are looked at from different places, through different lenses
 const D2R = Math.PI / 180;
@@ -1496,8 +1499,11 @@ function onPointer(cx, cy) {
   } else { cursor.lastWater = null; }      // on sand the rake (updateRake) follows the cursor and does the carving
   cursor.sx = ndc.x;
 }
+const fingers = new Set();      // touches currently down
+const liftCursor = () => { cursor.kind = null; cursor.lastWater = cursor.lastSand = null; };
 addEventListener('pointermove', e => {
   if (e.pointerType === 'mouse' && e.buttons !== 0) return;
+  if (e.pointerType === 'touch' && fingers.size > 1) { liftCursor(); return; }      // two fingers = looking around, not touching
   // over the tuning panel the tool lifts off the sand, so moving a slider does not rake what is behind it
   // over the buttons and panels the hand is off the scene: nothing behind them is stirred or raked
   if (e.target !== canvas) { cursor.kind = null; cursor.lastWater = cursor.lastSand = null; return; }
@@ -1528,6 +1534,15 @@ addEventListener('pointerup', e => {
   downAt = null;
 });
 document.addEventListener('pointerleave', () => { cursor.kind = null; cursor.lastWater = cursor.lastSand = null; });
+// a finger has no hover: it touches the scene the moment it lands and leaves it the moment it lifts
+addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  fingers.add(e.pointerId);
+  if (fingers.size > 1) { liftCursor(); if (downAt) downAt.cancel = true; }
+  else if (e.target === canvas) onPointer(e.clientX, e.clientY);
+});
+const fingerUp = e => { if (e.pointerType === 'touch') { fingers.delete(e.pointerId); liftCursor(); } };
+addEventListener('pointerup', fingerUp); addEventListener('pointercancel', fingerUp);
 document.querySelectorAll('#tod button').forEach(b => b.addEventListener('click', () => setTimeOfDay(b.dataset.tod)));
 
 // ───────────────────────────── sand tools ─────────────────────────────
@@ -1899,8 +1914,13 @@ const HINTS = {
 };
 const ENV_NAME = { pond: ['静', 'Shizuka · tranquil pond'], sand: ['枯', 'Karesansui · dry garden'], lake: ['湖', 'Mizuumi · mountain lake'] };
 let hintTimer = 0;
+const HINTS_TOUCH = {
+  pond: 'Touch the water to stir it · hold still and the koi come · drag on the sand to rake · two fingers to look around',
+  sand: 'Pick a tool in Menu · drag to draw in the sand · tap to press rings · two fingers to look around',
+  lake: 'Drag on the lake to stir it · press, hold and let go to skip a stone · two fingers to look around',
+};
 function showHint() {
-  const h = document.getElementById('hint'); h.textContent = HINTS[ENV]; h.classList.remove('gone');
+  const h = document.getElementById('hint'); h.textContent = (TOUCH ? HINTS_TOUCH : HINTS)[ENV]; h.classList.remove('gone');
   clearTimeout(hintTimer); hintTimer = setTimeout(() => h.classList.add('gone'), 10000);
 }
 function applyEnv(env) {
@@ -1962,11 +1982,33 @@ setTool(TOOLS[store.get('zen_tool')] ? store.get('zen_tool') : 'rake');
 // sound: browsers only allow audio after a gesture, so it starts on the first click/tap/key unless switched off
 const soundBtn = document.getElementById('sound');
 let soundWanted = store.get('zen_sound') !== 'off';
-function refreshSound() { soundBtn.textContent = audio.on ? 'Sound on' : (soundWanted ? 'Sound: click to start' : 'Sound off'); soundBtn.classList.toggle('on', audio.on); }
-soundBtn.addEventListener('click', e => { e.stopPropagation(); soundWanted = !audio.on; audio.setOn(soundWanted); store.set('zen_sound', soundWanted ? 'on' : 'off'); refreshSound(); });
+function refreshSound() {
+  const going = audio.on && audio.running;
+  soundBtn.textContent = going ? 'Sound on' : (soundWanted ? (TOUCH ? 'Sound: tap to start' : 'Sound: click to start') : 'Sound off');
+  soundBtn.classList.toggle('on', going);
+}
+audio.onstate = refreshSound;
+soundBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (audio.on && !audio.running) audio.unlock();      // switched on but held back by the browser: wake it, don't switch it off
+  else { soundWanted = !audio.on; audio.setOn(soundWanted); store.set('zen_sound', soundWanted ? 'on' : 'off'); }
+  refreshSound();
+});
 const firstGesture = e => { if (e.target === soundBtn) return; if (soundWanted && !audio.on) { audio.setOn(true); refreshSound(); } };   // the button handles its own click
 addEventListener('pointerdown', firstGesture); addEventListener('keydown', firstGesture);
+// Phones only let sound begin from inside a finished tap, and may hold it back again after the page has been in
+// the background, so every tap, click and key press gives it another nudge.
+const nudgeSound = e => { if (!soundWanted || e.target === soundBtn) return; if (!audio.on) audio.setOn(true); audio.unlock(); refreshSound(); };      // (the button looks after itself)
+for (const ev of ['pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, nudgeSound, { passive: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSound(); });
 refreshSound();
+
+// small screens: the controls live behind one Menu button
+const menuBtn = document.getElementById('menuBtn');
+const setMenu = v => { document.body.classList.toggle('menu-open', v); menuBtn.textContent = v ? 'Close' : 'Menu'; };
+menuBtn.addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
+canvas.addEventListener('pointerdown', () => setMenu(false));
+document.querySelectorAll('#envs button, #tools button, #tod button, #labBtn, #ambBtn, #resetSand').forEach(b => b.addEventListener('click', () => setMenu(false)));
 
 // ── pond ambient sounds: one switch each, plus all on / all off ──
 {
