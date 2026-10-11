@@ -13,7 +13,7 @@ export const LAKE_GLSL = /* glsl */`float lakeD(vec2 p){ float t = (p.x + 15.) /
   return (p.y - ${Z0}.) - (19. + 2.2 * sin(p.x * .11 + .6) + .9 * sin(p.x * .31 + 2.) - 9.5 * exp(-t * t)); }`;
 export const LAKE_VIEW = { pos: [0, 6.2, 55], tgt: [0, 7.0, 32] };
 
-export function createLake({ patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, waterMat, U, helpers }) {
+export function createLake({ lite = false, patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, waterMat, U, helpers }) {
   const { vn2, fbm2, sstep, clamp, mulberry32 } = helpers;
   const V3 = THREE.Vector3;
   const rnd = mulberry32(4711), R = (a, b) => a + rnd() * (b - a);
@@ -104,7 +104,7 @@ export function createLake({ patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, wat
 
   // ── terrain mesh: a fan of rings round the viewpoint, fine underfoot and coarse at the peaks ──
   {
-    const NR = 420, NA = 640, CX = 0, CZ = 38, R0 = 2, R1 = 4400, HALF = 2.0;      // centre in local coords, just behind the viewer
+    const NR = lite ? 300 : 420, NA = lite ? 460 : 640, CX = 0, CZ = 38, R0 = 2, R1 = 4400, HALF = 2.0;      // centre in local coords, just behind the viewer
     const pos = new Float32Array((NR + 1) * (NA + 1) * 3), info = new Float32Array((NR + 1) * (NA + 1) * 4);
     let k = 0, q = 0;
     for (let i = 0; i <= NR; i++) {
@@ -225,6 +225,7 @@ export function createLake({ patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, wat
       { geo: coniferGeo(1, 5, 0.2, false), step: 15, r0: 1000, r1: 2500, shadow: false, list: [] },
     ];
     for (const T of tiers) {
+      if (lite) T.step *= 1.22;      // phones: about a third fewer trees
       const x0 = -T.r1, x1 = T.r1, z0 = 31 - T.r1, z1 = 31 + Math.min(T.r1, 60);
       for (let gx = x0; gx < x1; gx += T.step) for (let gz = z0; gz < z1; gz += T.step) {
         const x = gx + rnd() * T.step, zl = gz + rnd() * T.step, d = Math.hypot(x, zl - 31);

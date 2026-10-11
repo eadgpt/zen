@@ -8,6 +8,8 @@
   :root { --ink: rgba(255, 248, 236, .92); --ink-dim: rgba(255, 248, 236, .72); }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #14110e; }
+  /* nothing here is meant to be selected: on a phone a long press must not highlight text or bring up Copy / Look Up */
+  html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   body { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Iowan Old Style", Georgia, serif; color: var(--ink); }
   #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
@@ -145,6 +147,6 @@
 <div id="power" hidden><div class="bar"><div></div></div><div class="txt"></div></div>
 <div id="veil"></div>
 <div id="loading">Settling the water…</div>
-<script type="module" src="./zen.js?v=29"></script>
+<script type="module" src="./zen.js?v=30"></script>
 </body>
 </html>

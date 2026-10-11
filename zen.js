@@ -7,8 +7,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createAudio } from './audio.js?v=29';
-import { createLake, lakeShore, LAKE_S, LAKE_GLSL, LAKE_VIEW } from './lake.js?v=29';
+import { createAudio } from './audio.js?v=30';
+import { createLake, lakeShore, LAKE_S, LAKE_GLSL, LAKE_VIEW } from './lake.js?v=30';
 
 const V3 = THREE.Vector3;
 
@@ -86,7 +86,11 @@ function terrainH(x, z, env = ENV) {
 // ───────────────────────────── renderer / scene / camera ─────────────────────────────
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-let PR = Math.min(window.devicePixelRatio || 1, 1.5);
+const TOUCH = matchMedia('(pointer: coarse)').matches;      // phone or tablet
+// Sharpness: how many rendered pixels per screen point. A phone's screen is small and very dense, so it may go
+// higher than a laptop and still draw fewer pixels in all; it gets lighter shadows and a lighter lake to pay for it.
+const PR_MAX = Math.min(window.devicePixelRatio || 1, TOUCH ? 2.5 : 1.5), PR_MIN = Math.min(1, PR_MAX);
+let PR = PR_MAX;
 renderer.setPixelRatio(PR);
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -111,7 +115,6 @@ controls.minPolarAngle = 0.32 * Math.PI; controls.maxPolarAngle = 0.492 * Math.P
 controls.minAzimuthAngle = -1.25; controls.maxAzimuthAngle = 1.25;
 controls.rotateSpeed = 0.45; controls.zoomSpeed = 0.6;
 // touch screens: one finger touches the water and the sand; two fingers look around and zoom
-const TOUCH = matchMedia('(pointer: coarse)').matches;
 if (TOUCH) controls.touches = { ONE: -1, TWO: THREE.TOUCH.DOLLY_ROTATE };
 controls.update();
 // the garden (pond + sand share it) and the lake are looked at from different places, through different lenses
@@ -281,7 +284,7 @@ let envRT = null;
 const sunDir = new V3();
 const sunLight = new THREE.DirectionalLight(0xffffff, 4);
 sunLight.castShadow = true;
-sunLight.shadow.mapSize.set(4096, 4096);
+sunLight.shadow.mapSize.set(TOUCH ? 2048 : 4096, TOUCH ? 2048 : 4096);
 Object.assign(sunLight.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15, near: 1, far: 110 });
 sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.035; sunLight.shadow.radius = 2.2;
 scene.add(sunLight);
@@ -593,7 +596,7 @@ const TERRAIN_COLOR = /* glsl */`
 const terrainMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }), { color: TERRAIN_COLOR, bump: 1.3, afterLights: CAUSTIC });
 {
   for (const env of ['pond', 'sand']) {
-    const g = new THREE.PlaneGeometry(SAND_S * 2, SAND_S * 2, 460, 460);
+    const g = new THREE.PlaneGeometry(SAND_S * 2, SAND_S * 2, TOUCH ? 300 : 460, TOUCH ? 300 : 460);
     g.rotateX(-Math.PI / 2);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) p.setY(i, terrainH(p.getX(i), p.getZ(i), env));
@@ -650,7 +653,7 @@ const ROCK_COLOR = /* glsl */`
 `;
 const rockMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.85 }), { color: ROCK_COLOR, bump: 1.4, fragPars: 'uniform float uMoss;', uniforms: { uMoss: { value: 1 } }, afterLights: CAUSTIC });
 const stoneMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.85 }), { color: ROCK_COLOR, bump: 1.0, fragPars: 'uniform float uMoss;', uniforms: { uMoss: { value: 0.55 } } });
-const rockGeos = [3, 17, 29, 41, 58, 73].map(makeRockGeo);
+const rockGeos = [3, 17, 29, 41, 58, 73].map(s => makeRockGeo(s, TOUCH ? 8 : 16));
 function addRock(x, z, s, o = {}) {
   const m = new THREE.Mesh(rockGeos[(rng() * rockGeos.length) | 0], rockMat);
   const sy = s * (o.sy ?? rand(0.5, 0.8));
@@ -745,7 +748,7 @@ const foliageMat = patch(new THREE.MeshStandardMaterial({ roughness: 0.82 }), { 
   cg.computeVertexNormals();
   const lumps = [];
   for (let i = 0; i < 9; i++) {
-    let lg = new THREE.IcosahedronGeometry(rand(0.42, 0.7), 6); lg.deleteAttribute('normal'); lg.deleteAttribute('uv'); lg = mergeVertices(lg, 1e-4);
+    let lg = new THREE.IcosahedronGeometry(rand(0.42, 0.7), TOUCH ? 2 : 6);      // (far-off trees: phones get simpler crowns) lg.deleteAttribute('normal'); lg.deleteAttribute('uv'); lg = mergeVertices(lg, 1e-4);
     const lp = lg.attributes.position, ox = rand(-0.62, 0.62), oy = rand(-0.3, 0.5), oz = rand(-0.62, 0.62);
     for (let j = 0; j < lp.count; j++) { v.fromBufferAttribute(lp, j); v.multiplyScalar(0.78 + 0.5 * fbm3(v.x * 3 + i * 7, v.y * 3, v.z * 3)); lp.setXYZ(j, v.x + ox, v.y + oy, v.z + oz); }
     lg.computeVertexNormals(); lumps.push(lg);
@@ -1416,7 +1419,7 @@ function updateReflCam() {
 }
 
 // ───────────────────────────── post-processing ─────────────────────────────
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: TOUCH ? 2 : 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.26, 0.6, 1.25);
 composer.addPass(bloom);
@@ -1927,7 +1930,7 @@ function applyEnv(env) {
   const prev = ENV, lakeOn = env === 'lake';
   ENV = env; ISLANDS = ISL[env];
   if (lakeOn && !lake) {
-    lake = createLake({ patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, waterMat, U, helpers: { vn2, fbm2, sstep, clamp, mulberry32 } });
+    lake = createLake({ lite: TOUCH, patch, NOISE, CAUSTIC, ROCK_COLOR, makeRockGeo, waterMat, U, helpers: { vn2, fbm2, sstep, clamp, mulberry32 } });
     scene.add(lake.group);
   }
   garden.visible = !lakeOn; if (lake) lake.group.visible = lakeOn;
@@ -2008,6 +2011,7 @@ const menuBtn = document.getElementById('menuBtn');
 const setMenu = v => { document.body.classList.toggle('menu-open', v); menuBtn.textContent = v ? 'Close' : 'Menu'; };
 menuBtn.addEventListener('click', () => setMenu(!document.body.classList.contains('menu-open')));
 canvas.addEventListener('pointerdown', () => setMenu(false));
+canvas.addEventListener('contextmenu', e => e.preventDefault());      // a long press is a throw being wound up, not a request for a menu
 document.querySelectorAll('#envs button, #tools button, #tod button, #labBtn, #ambBtn, #resetSand').forEach(b => b.addEventListener('click', () => setMenu(false)));
 
 // ── pond ambient sounds: one switch each, plus all on / all off ──
@@ -2124,8 +2128,32 @@ showHint();
 const clock = new THREE.Clock();
 let simAcc = 0, dripT = 0, ambT = 2, frames = 0, perfT = 0, perfN = 0;
 let simTime = 0;
+// Keeps the picture as sharp as the machine can draw smoothly. Judged over a second of frames at a time; a second
+// with a stall in it (loading, switching tabs) is ignored, and sharpness comes back when there is room for it.
+const perf = { n: 0, sum: 0, slow: 0, hitch: false, slowRun: 0, fastRun: 0, ceil: { garden: PR_MAX, lake: PR_MAX }, drop: null, capped: false, last: 0 };
+function adapt(ms) {
+  if (simTime < 4) return;
+  perf.n++; perf.sum += ms; if (ms > 25) perf.slow++; if (ms > 120) perf.hitch = true;
+  if (perf.n < 60) return;
+  const avg = perf.sum / perf.n, slow = perf.slow / perf.n, hitch = perf.hitch;
+  perf.n = perf.sum = perf.slow = 0; perf.hitch = false;
+  if (hitch) return;
+  if (perf.drop) {
+    // Did the last step down make it any faster? If not, something else is holding the frame rate (a phone in
+    // low-power mode draws 30 frames a second whatever it is given): go back to sharp and leave it there.
+    if (avg > perf.drop.avg * 0.88) { PR = perf.ceil[viewKey] = perf.drop.from; perf.capped = true; resize(); }
+    perf.drop = null; perf.slowRun = perf.fastRun = 0;
+    return;
+  }
+  perf.slowRun = slow > 0.6 ? perf.slowRun + 1 : 0;
+  perf.fastRun = slow < 0.08 ? perf.fastRun + 1 : 0;
+  if (perf.slowRun >= 2 && PR > PR_MIN && !perf.capped) {
+    perf.drop = { from: PR, avg }; PR = perf.ceil[viewKey] = Math.max(PR_MIN, PR - 0.25); perf.slowRun = 0; resize();
+  } else if (perf.fastRun >= 6 && PR < perf.ceil[viewKey]) { PR = Math.min(perf.ceil[viewKey], PR + 0.25); perf.fastRun = 0; resize(); }
+}
 function frame() {
   requestAnimationFrame(frame);
+  const now = performance.now(); if (perf.last) adapt(now - perf.last); perf.last = now;
   tick(Math.min(clock.getDelta(), 0.05));
 }
 function tick(dt) {
@@ -2177,8 +2205,8 @@ function tick(dt) {
 
   if (++frames === 3) document.getElementById('loading').classList.add('gone');
   // adaptive resolution: drop the pixel ratio if the machine can't hold ~45 fps
-  if (time > 4) { perfT += dt; perfN++; if (perfN >= 90) { if (perfT / perfN > 1 / 42 && PR > 1) { PR = Math.max(1, PR - 0.25); resize(); } perfT = perfN = 0; } }
+
 }
 frame();
 
-window.__zen = { get lake() { return lake; }, stones, throwStone, planThrow, aimMarks, canvas, VIEW, garden, tick, rake, setTool, resetSand, get tool() { return tool; }, audio, setEnv, clickAt, get env() { return ENV; }, THREE, renderer, scene, camera, controls, koi, pads, cursor, addDrop, setTimeOfDay, onPointer, sandQueue, PRESETS, cur, get pixelRatio() { return PR; } };
+window.__zen = { get lake() { return lake; }, stones, throwStone, planThrow, aimMarks, canvas, VIEW, garden, tick, rake, setTool, resetSand, get tool() { return tool; }, audio, setEnv, clickAt, get env() { return ENV; }, THREE, renderer, scene, camera, controls, koi, pads, cursor, addDrop, setTimeOfDay, onPointer, sandQueue, PRESETS, cur, get pixelRatio() { return PR; }, perf, adapt, PR_MAX };
