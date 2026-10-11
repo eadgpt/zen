@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Shizuka — Tranquil Pond</title>
+<style>
+  :root { --ink: rgba(255, 248, 236, .92); --ink-dim: rgba(255, 248, 236, .72); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #14110e; }
+  body { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Iowan Old Style", Georgia, serif; color: var(--ink); }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  #title { position: fixed; left: 28px; bottom: 26px; pointer-events: none; text-shadow: 0 1px 14px rgba(0,0,0,.55); }
+  #title .kanji { font-size: 44px; line-height: 1; letter-spacing: .04em; }
+  #title .credit { margin-top: 7px; font-size: 12px; letter-spacing: .03em; color: rgba(255, 248, 236, .5); }
+  #title .name { margin-top: 8px; font-size: 15px; letter-spacing: .32em; text-transform: uppercase; color: var(--ink-dim); }
+
+  #hint { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 20px; border-radius: 999px;
+    font-size: 15px; letter-spacing: .04em; white-space: nowrap; pointer-events: none;
+    background: rgba(20, 16, 12, .42); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 240, 215, .16); transition: opacity 1.6s ease; }
+  #hint.gone { opacity: 0; }
+
+  #controls { position: fixed; right: 24px; bottom: 26px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #controls .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill { display: flex; gap: 6px; padding: 5px; border-radius: 999px;
+    background: rgba(20, 16, 12, .42); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 240, 215, .16); }
+  .pill button { font: inherit; font-size: 14px; letter-spacing: .05em; color: var(--ink-dim); background: transparent; border: 0;
+    padding: 8px 15px; border-radius: 999px; cursor: pointer; transition: background .3s, color .3s; }
+  .pill button:hover { color: var(--ink); }
+  #sound { min-width: 11.5em; text-align: center; }   /* fixed width: label changes must not shift the other buttons */
+  .pill button.on { background: rgba(255, 236, 205, .2); color: #fff; }
+
+  /* throw-strength meter (lake) */
+  #power { position: fixed; pointer-events: none; padding: 8px 11px 7px; border-radius: 12px; background: rgba(20, 16, 12, .72);
+    border: 1px solid rgba(255, 240, 215, .18); font-size: 14px; white-space: nowrap; z-index: 3; }
+  #power[hidden] { display: none; }
+  #power .bar { width: 170px; height: 9px; border-radius: 9px; background: rgba(255, 240, 215, .18); overflow: hidden; margin-bottom: 6px; }
+  #power .bar div { height: 100%; width: 0; border-radius: 9px; background: linear-gradient(90deg, #9fe3dc, #f1d9a0 60%, #f0a070); }
+
+  /* sand-sound tuning panel */
+  .lab { position: fixed; left: 24px; top: 24px; width: 340px; max-height: calc(100vh - 150px); overflow-y: auto; padding: 16px 18px 14px;
+    border-radius: 18px; background: rgba(20, 16, 12, .72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 240, 215, .18); font-size: 14px; z-index: 3; }
+  .lab[hidden] { display: none; }
+  .lab h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; letter-spacing: .04em; display: flex; justify-content: space-between; align-items: center; }
+  .lab p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--ink-dim); }
+  .lab .lbl { margin: 12px 0 5px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+  .lab .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lab button { font: inherit; font-size: 13px; color: var(--ink); background: rgba(255, 236, 205, .09); border: 1px solid rgba(255, 240, 215, .16);
+    padding: 6px 11px; border-radius: 999px; cursor: pointer; }
+  .lab button:hover { background: rgba(255, 236, 205, .18); }
+  .lab button.on { background: rgba(255, 236, 205, .32); color: #fff; border-color: rgba(255, 240, 215, .5); }
+  .lab .sl { margin-top: 11px; }
+  .lab .sl .top { display: flex; justify-content: space-between; font-size: 14px; }
+  .lab .sl .top b { font-weight: 600; }
+  .lab .sl .top span { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .lab .sl .ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-dim); }
+  .lab input[type=range] { width: 100%; margin: 5px 0 1px; accent-color: #e8cfa4; }
+  .lab .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  #ambList .amb { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid rgba(255, 240, 215, .12); }
+  #ambList .amb:first-child { margin-top: 12px; }
+  #ambList .amb .txt { flex: 1; min-width: 0; }
+  #ambList .amb .txt b { display: block; font-size: 15px; font-weight: 600; }
+  #ambList .amb .txt span { display: block; font-size: 13px; line-height: 1.35; color: var(--ink-dim); }
+  #ambList .amb.off .txt { opacity: .5; }
+  #ambList .sw { min-width: 3.6em; text-align: center; }
+  #labOut { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, .3); font-size: 13px; line-height: 1.45;
+    user-select: text; -webkit-user-select: text; word-break: break-word; }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #14110e; font-size: 16px;
+    letter-spacing: .3em; text-transform: uppercase; color: var(--ink-dim); transition: opacity 1.4s ease; z-index: 5; }
+  #loading.gone { opacity: 0; pointer-events: none; }
+  #veil { position: fixed; inset: 0; background: #14110e; opacity: 0; pointer-events: none; transition: opacity .65s ease; z-index: 4; }
+  #veil.show { opacity: 1; }
+  @media (max-width: 760px) { #hint { display: none; } #title .kanji { font-size: 34px; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><div class="kanji" id="kanji">静</div><div class="name" id="name">Shizuka · tranquil pond</div><div class="credit">Water sounds: InspectorJ (CC BY 4.0) · roisin.gleeson (CC0) — Freesound.org</div></div>
+<div id="hint">Glide over the water · hold still and the koi come · sweep the sand to rake it · drag to look around</div>
+<div id="controls">
+  <div class="row">
+    <div class="pill" id="tools"><button data-tool="rake" class="on">Rake</button><button data-tool="hand">Hand</button><button data-tool="stick">Stick</button><button data-tool="board">Smooth</button></div>
+    <div class="pill" id="resetPill"><button id="resetSand">Reset sand</button></div>
+    <div class="pill" id="labPill"><button id="labBtn">Tune sand sound</button></div>
+    <div class="pill" id="ambPill"><button id="ambBtn">Ambient sounds</button></div>
+  </div>
+  <div class="row">
+    <div class="pill" id="envs"><button data-env="pond" class="on">Pond</button><button data-env="sand">Sand garden</button><button data-env="lake">Lake</button></div>
+    <div class="pill"><button id="sound">Sound off</button></div>
+  </div>
+  <div class="pill" id="tod">
+    <button data-tod="morning">Morning</button>
+    <button data-tod="golden" class="on">Golden hour</button>
+    <button data-tod="dusk">Dusk</button>
+  </div>
+</div>
+<div id="ambLab" class="lab" hidden>
+  <h2>Ambient sounds <button id="ambClose" aria-label="Close">Close</button></h2>
+  <p>Switch the sounds here on or off, all at once or one by one. <b>Hear</b> plays a sound now so you can tell which is which.</p>
+  <div class="acts" style="margin-top:0"><button id="ambAllOn">All on</button><button id="ambAllOff">All off</button></div>
+  <div id="ambList"></div>
+</div>
+<div id="sandLab" class="lab" hidden>
+  <h2>Tune sand sound <button id="labClose" aria-label="Close">Close</button></h2>
+  <p>Press <b>Listen</b>, then move the sliders until it sounds like fine sand. It saves itself.</p>
+  <div class="lbl">Starting points</div><div class="chips" id="labPresets"></div>
+  <div class="lbl">Recording</div><div class="chips" id="labSrc"></div>
+  <div id="labSliders"></div>
+  <div class="acts"><button id="labListen">Listen</button><button id="labReset">Back to yours</button><button id="labCopy">Copy settings</button></div>
+  <div id="labOut"></div>
+</div>
+<div id="power" hidden><div class="bar"><div></div></div><div class="txt"></div></div>
+<div id="veil"></div>
+<div id="loading">Settling the water…</div>
+<script type="module" src="./zen.js?v=28"></script>
+</body>
+</html>
